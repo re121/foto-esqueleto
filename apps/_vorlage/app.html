@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neue App</title>
+<!--FE:CSS-->
+</head>
+<body>
+<!--FE:JS-->
+<script>
+/* Template: copy this folder, rename it, change id/title/controls/render.
+   Run `node build.mjs` and your single-file app appears in dist/. */
+FotoEsqueleto.create({
+  id: 'neue-app',
+  title: 'Neue App',
+  subtitle: 'Kurze Beschreibung',
+  inputs: { files: true, multiple: false, camera: false },
+  controls: [
+    { key: 'amount', type: 'range', label: 'Stärke', min: 0, max: 100, step: 1, value: 50 },
+  ],
+  render({ canvas, ctx, sources, video, params, util }) {
+    ctx.drawImage(video || sources[0].image, 0, 0, canvas.width, canvas.height);
+    // Your image processing goes here.
+  },
+});
+</script>
+</body>
+</html>

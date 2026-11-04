@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kontaktbogen</title>
+<!--FE:CSS-->
+</head>
+<body>
+<!--FE:JS-->
+<script>
+/* App 2 — Kontaktbogen (hoja de contactos): many photos -> one printable
+   sheet or postcard, as in a darkroom contact sheet. Built on foto-esqueleto. */
+const FORMATS = {
+  a6p: { w: 1240, h: 1748, label: 'Postkarte A6 hoch' },
+  a6l: { w: 1748, h: 1240, label: 'Postkarte A6 quer' },
+  a4p: { w: 2480, h: 3508, label: 'A4 hoch' },
+  sq:  { w: 2000, h: 2000, label: 'Quadrat (Instagram)' },
+};
+FotoEsqueleto.create({
+  id: 'kontaktbogen',
+  title: 'Kontaktbogen',
+  subtitle: 'Viele Fotos, ein Blatt',
+  icon: '▦',
+  inputs: { files: true, multiple: true },
+  dropText: 'Mehrere Fotos hierher ziehen oder auswählen',
+  exportName: 'kontaktbogen',
+  exportType: 'image/jpeg',
+  controls: [
+    { key: 'format', type: 'select', label: 'Format', value: 'a6p',
+      options: Object.entries(FORMATS).map(([value, f]) => ({ value, label: f.label })) },
+    { key: 'cols', type: 'range', label: 'Spalten', min: 1, max: 10, step: 1, value: 5 },
+    { key: 'gap', type: 'range', label: 'Abstand', min: 0, max: 80, step: 2, value: 16 },
+    { key: 'margin', type: 'range', label: 'Rand', min: 0, max: 200, step: 5, value: 60 },
+    { key: 'bg', type: 'color', label: 'Hintergrund', value: '#ffffff' },
+    { key: 'names', type: 'checkbox', label: 'Dateinamen anzeigen', value: false },
+  ],
+  size: ({ params }) => { const f = FORMATS[params.format]; return { w: f.w, h: f.h }; },
+  render({ canvas, ctx, sources, params, util, setStatus }) {
+    const W = canvas.width, H = canvas.height, n = sources.length;
+    ctx.fillStyle = params.bg; ctx.fillRect(0, 0, W, H);
+    const cols = Math.min(params.cols, n), rows = Math.ceil(n / cols);
+    const m = params.margin, gap = params.gap, label = params.names ? Math.round(W / 60) : 0;
+    const cw = (W - 2 * m - gap * (cols - 1)) / cols;
+    // Cell height follows the photos' typical shape, so the grid stays compact and centred.
+    const ratios = sources.map(s => s.height / s.width).sort((a, b) => a - b);
+    const typical = ratios[Math.floor(ratios.length / 2)];
+    const maxCh = (H - 2 * m - gap * (rows - 1)) / rows;
+    const ch = Math.min(maxCh, cw * typical + (params.names ? W / 60 * 1.6 : 0));
+    const y0 = (H - (rows * ch + (rows - 1) * gap)) / 2;
+    ctx.font = label + 'px sans-serif'; ctx.textAlign = 'center';
+    const dark = util.hexToRgb(params.bg).reduce((a, b) => a + b) < 384;
+    ctx.fillStyle = dark ? '#ccc' : '#444';
+    sources.forEach((s, i) => {
+      const x = m + (i % cols) * (cw + gap), y = y0 + Math.floor(i / cols) * (ch + gap);
+      const r = util.fit(s.width, s.height, cw, ch - (label ? label * 1.6 : 0));
+      ctx.drawImage(s.image, x + r.x, y + r.y, r.w, r.h);
+      if (label) ctx.fillText(s.name.replace(/\.[^.]+$/, '').slice(0, 30), x + cw / 2, y + ch - label * 0.3);
+    });
+    setStatus(n + (n === 1 ? ' Foto' : ' Fotos') + ' · ' + W + ' × ' + H + ' px');
+  },
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enfoque</title>
+<!--FE:CSS-->
+</head>
+<body>
+<!--FE:JS-->
+<script>
+/* App 1 — Enfoque: focus peaking for macro photography.
+   Marks the sharpest edges of a photo or live camera image in colour,
+   so you can see what is in focus. Built on foto-esqueleto. */
+FotoEsqueleto.create({
+  id: 'enfoque',
+  title: 'Enfoque',
+  subtitle: 'Fokus-Peaking für Makrofotografie',
+  icon: '◎',
+  inputs: { files: true, camera: true },
+  maxSize: 1280,
+  exportName: 'enfoque',
+  controls: [
+    { key: 'threshold', type: 'range', label: 'Empfindlichkeit', min: 20, max: 400, step: 5, value: 140 },
+    { key: 'color', type: 'color', label: 'Farbe', value: '#ff2a2a' },
+    { key: 'dim', type: 'range', label: 'Bild abdunkeln', min: 0, max: 80, step: 5, value: 30, format: v => v + ' %' },
+    { key: 'onlyEdges', type: 'checkbox', label: 'Nur Kanten zeigen', value: false },
+  ],
+  render({ canvas, ctx, sources, video, params, util }) {
+    const W = canvas.width, H = canvas.height;
+    ctx.drawImage(video || sources[0].image, 0, 0, W, H);
+    const img = ctx.getImageData(0, 0, W, H), d = img.data;
+    const mag = util.sobel(util.gray(img), W, H);
+    const [r, g, b] = util.hexToRgb(params.color);
+    const k = 1 - params.dim / 100;
+    for (let i = 0, j = 0; j < mag.length; i += 4, j++) {
+      if (mag[j] > params.threshold) { d[i] = r; d[i + 1] = g; d[i + 2] = b; }
+      else if (params.onlyEdges) { d[i] = d[i + 1] = d[i + 2] = 0; }
+      else { d[i] *= k; d[i + 1] *= k; d[i + 2] *= k; }
+    }
+    ctx.putImageData(img, 0, 0);
+  },
+});
+</script>
+</body>
+</html>
