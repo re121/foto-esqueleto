@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Build on skeleton/app save",
+      "trigger": "PostFileSave",
+      "description": "Runs node build.mjs whenever a file in skeleton/ or apps/*/app.html is saved, rebuilding all dist/ files.",
+      "matcher": "skeleton/|apps/.+/app\\.html",
+      "action": {
+        "type": "command",
+        "command": "cd /Users/re/Documents/foto-esqueleto && ~/.local/node/bin/node build.mjs"
+      }
+    }
+  ]
+}

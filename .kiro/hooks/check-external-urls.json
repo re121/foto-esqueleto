@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Check no external URLs (R1, R6)",
+      "trigger": "PostFileSave",
+      "description": "After any file in apps/ or skeleton/ is saved, checks that no app, skeleton or dist file references external URLs (http:// or https://) via src, href, import or fetch. Reports offending file and line. Enforces R1 (self-contained) and R6 (privacy).",
+      "matcher": "apps/|skeleton/",
+      "action": {
+        "type": "command",
+        "command": "cd /Users/re/Documents/foto-esqueleto && ~/.local/node/bin/node check-external-urls.mjs"
+      }
+    }
+  ]
+}
