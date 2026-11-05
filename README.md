@@ -5,7 +5,15 @@ that run offline in the browser and never upload your pictures.
 
 Built for **Kiroween 2026 — Skeleton Crew**.
 
-## The two apps
+## Live demo
+
+| | |
+|---|---|
+| **Landing page** | <https://effortless-brigadeiros-f6dfce.netlify.app> |
+| **Enfoque** | <https://effortless-brigadeiros-f6dfce.netlify.app/enfoque.html> |
+| **Kontaktbogen** | <https://effortless-brigadeiros-f6dfce.netlify.app/hoja-de-contactos.html> |
+
+
 
 | App | What it does | Inputs |
 |---|---|---|
@@ -18,7 +26,7 @@ Both are built from the same `skeleton/` — an app is just a config and a `rend
 
 1. Copy `apps/_vorlage` to `apps/my-app`.
 2. Change `id`, `title`, `controls` and `render()`.
-3. Run `node build.mjs` → `dist/my-app.html`.
+3. Run `~/.local/node/bin/node build.mjs` → `dist/my-app.html`.
 
 ## Why
 

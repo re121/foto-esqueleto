@@ -72,7 +72,7 @@
     );
     const side = el('aside', { class: 'fe-side' },
       el('h1', { class: 'fe-title' }, cfg.title),
-      cfg.subtitle ? el('p', { class: 'fe-sub' }, cfg.subtitle) : '',
+      cfg.subtitle ? el('p', { class: 'fe-sub' }, cfg.subtitle + (cfg.subtitleEn ? ' · ' + cfg.subtitleEn : '')) : '',
     );
     const btnRow = el('div', { class: 'fe-row' });
     if (inputs.files) btnRow.append(el('button', { class: 'fe-btn', onclick: () => fileInput.click() }, inputs.multiple ? 'Fotos…' : 'Foto…'));
