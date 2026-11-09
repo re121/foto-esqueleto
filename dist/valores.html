@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valores</title>
+<style>
+/* foto-esqueleto — core styles. Darkroom look, large touch targets. */
+:root{
+  --bg:#111;--panel:#1c1c1c;--line:#333;--text:#eee;--muted:#999;
+  --accent:#c0392b;--accent-text:#fff;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+}
+:root[data-theme="light"]{--bg:#f4f2ee;--panel:#fff;--line:#ddd;--text:#1a1a1a;--muted:#666}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-size:16px;min-height:100vh}
+.fe-app{display:grid;grid-template-columns:300px 1fr;min-height:100vh}
+.fe-side{background:var(--panel);border-right:1px solid var(--line);padding:18px;display:flex;flex-direction:column;gap:16px;overflow:auto}
+.fe-title{font-size:20px;font-weight:600;margin:0}
+.fe-sub{color:var(--muted);font-size:13px;margin:-10px 0 0}
+.fe-group{display:flex;flex-direction:column;gap:6px}
+.fe-group label{font-size:13px;color:var(--muted);display:flex;justify-content:space-between}
+.fe-group input[type=range]{width:100%;accent-color:var(--accent)}
+.fe-group input[type=color]{width:100%;height:40px;padding:2px;background:var(--bg);border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.fe-check{flex-direction:row!important;align-items:center;gap:10px!important;font-size:14px;color:var(--text)!important;justify-content:flex-start!important;cursor:pointer}
+.fe-check input{width:20px;height:20px;accent-color:var(--accent);margin:0}
+.fe-group select,.fe-group input[type=text]{width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px}
+.fe-btn{padding:11px 14px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:15px;cursor:pointer;text-align:center}
+.fe-btn:hover{border-color:var(--accent)}
+.fe-btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+.fe-row{display:flex;gap:8px}.fe-row .fe-btn{flex:1}
+.fe-stage{display:flex;align-items:center;justify-content:center;padding:18px;position:relative;overflow:auto}
+.fe-stage canvas{max-width:100%;max-height:calc(100vh - 36px);box-shadow:0 4px 30px rgba(0,0,0,.5);background:#000}
+.fe-drop{position:absolute;inset:18px;border:2px dashed var(--line);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);text-align:center;padding:20px}
+.fe-drop.over{border-color:var(--accent);color:var(--text)}
+.fe-hidden{display:none!important}
+.fe-status{font-size:12px;color:var(--muted);margin-top:auto}
+@media (max-width:760px){.fe-app{grid-template-columns:1fr}.fe-side{border-right:0;border-bottom:1px solid var(--line)}.fe-stage{min-height:60vh}}
+</style>
+</head>
+<body>
+<script>
+/* foto-esqueleto — core.
+ * One skeleton, many single-file photo tools.
+ * An app only declares: title, inputs, controls and a render() function.
+ * The skeleton supplies: layout, file/camera input, drag & drop, persisted
+ * settings, render loop, export, theme and shared image utilities.
+ * No dependencies, works offline, everything stays on the device.
+ */
+(function (global) {
+  'use strict';
+
+  const util = {
+    /** Fit a w×h box into W×H, centred. Returns {x,y,w,h}. */
+    fit(w, h, W, H, pad = 0) {
+      const s = Math.min((W - 2 * pad) / w, (H - 2 * pad) / h);
+      const dw = w * s, dh = h * s;
+      return { x: (W - dw) / 2, y: (H - dh) / 2, w: dw, h: dh };
+    },
+    /** Luminance array (0–255) from ImageData. */
+    gray(img) {
+      const d = img.data, g = new Float32Array(img.width * img.height);
+      for (let i = 0, j = 0; i < d.length; i += 4, j++) g[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      return g;
+    },
+    /** Sobel gradient magnitude of a gray array. */
+    sobel(g, w, h) {
+      const m = new Float32Array(w * h);
+      for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        const gx = -g[i - w - 1] - 2 * g[i - 1] - g[i + w - 1] + g[i - w + 1] + 2 * g[i + 1] + g[i + w + 1];
+        const gy = -g[i - w - 1] - 2 * g[i - w] - g[i - w + 1] + g[i + w - 1] + 2 * g[i + w] + g[i + w + 1];
+        m[i] = Math.sqrt(gx * gx + gy * gy);
+      }
+      return m;
+    },
+    hexToRgb(hex) {
+      const n = parseInt(hex.replace('#', ''), 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    },
+  };
+
+  const store = {
+    load(id) { try { return JSON.parse(localStorage.getItem('fe:' + id)) || {}; } catch (e) { return {}; } },
+    save(id, v) { try { localStorage.setItem('fe:' + id, JSON.stringify(v)); } catch (e) { /* private mode */ } },
+  };
+
+  function el(tag, attrs = {}, ...kids) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') n.className = v; else if (k.startsWith('on')) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v);
+    }
+    kids.flat().forEach(k => n.append(k instanceof Node ? k : document.createTextNode(k)));
+    return n;
+  }
+
+  function create(cfg) {
+    const inputs = Object.assign({ files: true, multiple: false, camera: false }, cfg.inputs);
+    const saved = store.load(cfg.id);
+    const params = {};
+    (cfg.controls || []).forEach(c => { params[c.key] = c.key in saved ? saved[c.key] : c.value; });
+
+    const state = { sources: [], video: null, stream: null, raf: 0 };
+    const canvas = el('canvas', { width: 1200, height: 800 });
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    // ---- layout
+    const fileInput = el('input', { type: 'file', accept: 'image/*', class: 'fe-hidden' });
+    if (inputs.multiple) fileInput.multiple = true;
+    const status = el('div', { class: 'fe-status' });
+    const drop = el('div', { class: 'fe-drop' },
+      el('div', { style: 'font-size:40px' }, cfg.icon || '◐'),
+      el('div', {}, cfg.dropText || (inputs.multiple ? 'Fotos hierher ziehen oder auswählen' : 'Foto hierher ziehen oder auswählen')),
+    );
+    const side = el('aside', { class: 'fe-side' },
+      el('h1', { class: 'fe-title' }, cfg.title),
+      cfg.subtitle ? el('p', { class: 'fe-sub' }, cfg.subtitle + (cfg.subtitleEn ? ' · ' + cfg.subtitleEn : '')) : '',
+    );
+    const btnRow = el('div', { class: 'fe-row' });
+    if (inputs.files) btnRow.append(el('button', { class: 'fe-btn', onclick: () => fileInput.click() }, inputs.multiple ? 'Fotos…' : 'Foto…'));
+    if (inputs.camera) btnRow.append(el('button', { class: 'fe-btn', onclick: toggleCamera }, 'Kamera'));
+    side.append(btnRow, fileInput);
+
+    (cfg.controls || []).forEach(c => side.append(control(c)));
+    side.append(
+      el('button', { class: 'fe-btn primary', onclick: exportImage }, cfg.exportLabel || 'Speichern'),
+      el('button', { class: 'fe-btn', onclick: toggleTheme }, 'Hell / Dunkel'),
+      status,
+    );
+    const stage = el('main', { class: 'fe-stage' }, canvas, drop);
+    document.body.append(el('div', { class: 'fe-app' }, side, stage));
+    document.title = cfg.title;
+    try { if (localStorage.getItem('fe:theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch (e) {}
+
+    function control(c) {
+      const out = el('span', {}, fmt(c, params[c.key]));
+      const lab = el('label', {}, c.label, c.type === 'range' ? out : '');
+      let input;
+      if (c.type === 'select') {
+        input = el('select', {}, ...c.options.map(o => el('option', { value: o.value }, o.label)));
+        input.value = params[c.key];
+      } else if (c.type === 'checkbox') {
+        input = el('input', { type: 'checkbox' }); input.checked = !!params[c.key];
+      } else {
+        input = el('input', { type: c.type, min: c.min ?? '', max: c.max ?? '', step: c.step ?? '' });
+        input.value = params[c.key];
+      }
+      input.addEventListener('input', () => {
+        const v = c.type === 'checkbox' ? input.checked : (c.type === 'range' ? Number(input.value) : input.value);
+        params[c.key] = v; out.textContent = fmt(c, v); store.save(cfg.id, params); draw();
+      });
+      if (c.type === 'checkbox') return el('div', { class: 'fe-group' }, el('label', { class: 'fe-check' }, input, c.label));
+      return el('div', { class: 'fe-group' }, lab, input);
+    }
+    function fmt(c, v) { return c.type === 'range' ? (c.format ? c.format(v) : String(v)) : ''; }
+
+    // ---- input
+    fileInput.addEventListener('change', () => addFiles(fileInput.files));
+    stage.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+    stage.addEventListener('dragleave', () => drop.classList.remove('over'));
+    stage.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); });
+
+    async function addFiles(list) {
+      const files = [...list].filter(f => f.type.startsWith('image/'));
+      if (!files.length) return;
+      stopCamera();
+      const loaded = await Promise.all(files.map(async f => {
+        const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
+        return { name: f.name, image: bmp, width: bmp.width, height: bmp.height };
+      }));
+      state.sources = inputs.multiple ? state.sources.concat(loaded) : loaded.slice(0, 1);
+      fileInput.value = '';
+      draw();
+    }
+
+    async function toggleCamera() {
+      if (state.stream) return stopCamera();
+      try {
+        state.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 } } });
+        state.video = el('video', { playsinline: '', muted: '' });
+        state.video.srcObject = state.stream; await state.video.play();
+        loop();
+      } catch (e) { status.textContent = 'Kamera nicht verfügbar: ' + e.message; }
+    }
+    function stopCamera() {
+      cancelAnimationFrame(state.raf);
+      if (state.stream) state.stream.getTracks().forEach(t => t.stop());
+      state.stream = null; state.video = null;
+    }
+    function loop() { draw(); state.raf = requestAnimationFrame(loop); }
+
+    // ---- render
+    function draw() {
+      const has = state.sources.length || state.video;
+      drop.classList.toggle('fe-hidden', !!has);
+      canvas.classList.toggle('fe-hidden', !has);
+      if (!has) return;
+      const api = { canvas, ctx, sources: state.sources, video: state.video, params, util, setStatus: t => (status.textContent = t) };
+      const size = cfg.size ? cfg.size(api) : defaultSize(api);
+      if (canvas.width !== size.w || canvas.height !== size.h) { canvas.width = size.w; canvas.height = size.h; }
+      cfg.render(api);
+    }
+    function defaultSize({ sources, video }) {
+      const s = video ? { width: video.videoWidth, height: video.videoHeight } : sources[0];
+      const k = Math.min(1, (cfg.maxSize || 1600) / Math.max(s.width, s.height));
+      return { w: Math.round(s.width * k) || 1, h: Math.round(s.height * k) || 1 };
+    }
+
+    // ---- export
+    function exportImage() {
+      if (canvas.classList.contains('fe-hidden')) return;
+      const type = cfg.exportType || 'image/png';
+      canvas.toBlob(b => {
+        const a = el('a', { href: URL.createObjectURL(b), download: (cfg.exportName || cfg.id) + (type === 'image/jpeg' ? '.jpg' : '.png') });
+        document.body.append(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      }, type, 0.92);
+    }
+    function toggleTheme() {
+      const light = document.documentElement.dataset.theme !== 'light';
+      document.documentElement.dataset.theme = light ? 'light' : '';
+      try { localStorage.setItem('fe:theme', light ? 'light' : 'dark'); } catch (e) {}
+    }
+
+    return { draw, params, state, util };
+  }
+
+  global.FotoEsqueleto = { create, util };
+})(window);
+</script>
+<script>
+/* App 3 — Valores: tonal analysis for painters.
+   Six modes — value scale, Notan, squint blur, Ansel Adams zone map,
+   colour temperature, and original — plus a grid overlay and an eyedropper.
+   Built on foto-esqueleto. */
+
+// ── Adams zone data ───────────────────────────────────────────────────────────
+const ZONES = [
+  { num: '0',    de: 'Tiefschwarz',   en: 'Pure black',      L: [  0,  22], rgb: [  0,  0,  0] },
+  { num: 'I',    de: 'Fast schwarz',  en: 'Near black',      L: [ 23,  45], rgb: [ 23, 23, 23] },
+  { num: 'II',   de: 'Tiefer Schatten', en: 'Deep shadow',   L: [ 46,  68], rgb: [ 57, 57, 57] },
+  { num: 'III',  de: 'Kernschatten',  en: 'Core shadow',     L: [ 69,  91], rgb: [ 80, 80, 80] },
+  { num: 'IV',   de: 'Schlagschatten',en: 'Cast shadow',     L: [ 92, 114], rgb: [103, 103,103] },
+  { num: 'V',    de: 'Mittleres Grau',en: 'Middle grey',     L: [115, 137], rgb: [128, 128,128] },
+  { num: 'VI',   de: 'Halbton',       en: 'Half-light',      L: [138, 160], rgb: [153, 153,153] },
+  { num: 'VII',  de: 'Reflexlicht',   en: 'Reflected light', L: [161, 183], rgb: [179, 179,179] },
+  { num: 'VIII', de: 'Helles Licht',  en: 'Bright light',    L: [184, 206], rgb: [204, 204,204] },
+  { num: 'IX',   de: 'Fast Weiß',     en: 'Near white',      L: [207, 229], rgb: [230, 230,230] },
+  { num: 'X',    de: 'Reines Weiß',   en: 'Pure white',      L: [230, 255], rgb: [255, 255,255] },
+];
+
+// Pre-build a lookup: lum (0–255) → zone index
+const LUM_TO_ZONE = new Uint8Array(256);
+for (let l = 0; l < 256; l++) {
+  let zi = ZONES.length - 1;
+  for (let z = 0; z < ZONES.length; z++) {
+    if (l >= ZONES[z].L[0] && l <= ZONES[z].L[1]) { zi = z; break; }
+  }
+  LUM_TO_ZONE[l] = zi;
+}
+
+// ── Box-blur helper (two-pass, in-place on ImageData.data) ────────────────────
+function boxBlur(d, w, h, radius) {
+  if (radius < 1) return;
+  const r = Math.round(radius);
+  const tmp = new Uint8ClampedArray(d.length);
+
+  // Horizontal pass
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let sr = 0, sg = 0, sb = 0, cnt = 0;
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = Math.min(w - 1, Math.max(0, x + dx));
+        const i = (y * w + nx) * 4;
+        sr += d[i]; sg += d[i + 1]; sb += d[i + 2]; cnt++;
+      }
+      const o = (y * w + x) * 4;
+      tmp[o] = sr / cnt; tmp[o + 1] = sg / cnt; tmp[o + 2] = sb / cnt; tmp[o + 3] = d[o + 3];
+    }
+  }
+
+  // Vertical pass (reads from tmp, writes back to d)
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      let sr = 0, sg = 0, sb = 0, cnt = 0;
+      for (let dy = -r; dy <= r; dy++) {
+        const ny = Math.min(h - 1, Math.max(0, y + dy));
+        const i = (ny * w + x) * 4;
+        sr += tmp[i]; sg += tmp[i + 1]; sb += tmp[i + 2]; cnt++;
+      }
+      const o = (y * w + x) * 4;
+      d[o] = sr / cnt; d[o + 1] = sg / cnt; d[o + 2] = sb / cnt; d[o + 3] = tmp[o + 3];
+    }
+  }
+}
+
+// ── RGB → HSL (h: 0–360, s: 0–1, l: 0–1) ────────────────────────────────────
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h;
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (max === g) h = ((b - r) / d + 2) / 6;
+  else h = ((r - g) / d + 4) / 6;
+  return [h * 360, s, l];
+}
+
+// ── Main app ──────────────────────────────────────────────────────────────────
+(function () {
+  // Eyedropper closure: set by render() on first call, used by the click handler.
+  let _setStatus = null;
+  let _canvas = null;
+  let _clickBound = false;
+
+  function attachEyedropper(canvas, setStatus) {
+    _setStatus = setStatus;
+    if (_clickBound) return;
+    _clickBound = true;
+    _canvas = canvas;
+    canvas.addEventListener('click', function (e) {
+      if (!_setStatus) return;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const px = Math.floor((e.clientX - rect.left) * scaleX);
+      const py = Math.floor((e.clientY - rect.top) * scaleY);
+      if (px < 0 || py < 0 || px >= canvas.width || py >= canvas.height) return;
+      const ctx2 = canvas.getContext('2d', { willReadFrequently: true });
+      const pxData = ctx2.getImageData(px, py, 1, 1).data;
+      const R = pxData[0], G = pxData[1], B = pxData[2];
+      const lum = Math.round(0.299 * R + 0.587 * G + 0.114 * B);
+      const zi = Math.min(ZONES.length - 1, LUM_TO_ZONE[lum]);
+      const z = ZONES[zi];
+      const hex = '#' + [R, G, B].map(c => c.toString(16).padStart(2, '0')).join('');
+      _setStatus('Zone ' + z.num + ' · ' + z.de + ' / ' + z.en + ' · ' + hex);
+    });
+    canvas.style.cursor = 'crosshair';
+  }
+
+  FotoEsqueleto.create({
+    id: 'valores',
+    title: 'Valores',
+    subtitle: 'Licht für Maler',
+    subtitleEn: 'Light for painters',
+    icon: '◑',
+    inputs: { files: true, multiple: false, camera: false },
+    maxSize: 1600,
+    exportName: 'valores',
+    controls: [
+      { key: 'mode', type: 'select', label: 'Modus / Mode', value: 'values',
+        options: [
+          { value: 'original',    label: 'Original' },
+          { value: 'values',      label: 'Tonwerte · Value scale' },
+          { value: 'notan',       label: 'Notan' },
+          { value: 'squint',      label: 'Kneifen · Squint' },
+          { value: 'zones',       label: 'Zonenkarte · Zone map' },
+          { value: 'temperature', label: 'Farbtemperatur · Temperature' },
+        ]
+      },
+      { key: 'steps', type: 'select', label: 'Tonstufen · Value steps', value: '5',
+        options: [
+          { value: '3', label: '3 Stufen · 3 steps' },
+          { value: '5', label: '5 Stufen · 5 steps' },
+          { value: '9', label: '9 Stufen · 9 steps' },
+        ]
+      },
+      { key: 'threshold', type: 'range', label: 'Schwelle · Threshold', min: 0, max: 255, step: 1, value: 128, format: v => String(v) },
+      { key: 'blur', type: 'range', label: 'Unschärfe · Blur', min: 0, max: 40, step: 1, value: 8, format: v => String(v) + ' px' },
+      { key: 'tempStrength', type: 'range', label: 'Stärke · Strength', min: 0, max: 100, step: 5, value: 60, format: v => v + ' %' },
+      { key: 'grid', type: 'checkbox', label: 'Raster · Grid', value: false },
+      { key: 'gridDiv', type: 'select', label: 'Rasterteilung · Grid divisions', value: '3',
+        options: [
+          { value: '3', label: '3 × 3' },
+          { value: '4', label: '4 × 4' },
+          { value: 'c', label: 'Eigene · Custom' },
+        ]
+      },
+      { key: 'gridCustom', type: 'range', label: 'Eigene Teilung · Custom divisions', min: 2, max: 20, step: 1, value: 6, format: v => v + ' × ' + v },
+    ],
+
+    render({ canvas, ctx, sources, params, util, setStatus }) {
+      const W = canvas.width, H = canvas.height;
+      const src = sources[0];
+
+      attachEyedropper(canvas, setStatus);
+
+      // ── Draw source image (fit to canvas) ──────────────────────────────────
+      if (params.mode === 'original') {
+        ctx.clearRect(0, 0, W, H);
+        const r = util.fit(src.width, src.height, W, H);
+        ctx.drawImage(src.image, r.x, r.y, r.w, r.h);
+        if (params.grid) drawGrid(ctx, W, H, params);
+        return;
+      }
+
+      ctx.clearRect(0, 0, W, H);
+      const r = util.fit(src.width, src.height, W, H);
+      ctx.drawImage(src.image, r.x, r.y, r.w, r.h);
+      const img = ctx.getImageData(0, 0, W, H);
+      const d = img.data;
+
+      if (params.mode === 'values') {
+        const steps = Number(params.steps) || 5;
+        for (let i = 0; i < d.length; i += 4) {
+          const L = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          const bucket = Math.min(steps - 1, Math.floor(L / 256 * steps));
+          const grey = Math.round(bucket / (steps - 1) * 255);
+          d[i] = d[i + 1] = d[i + 2] = grey;
+        }
+
+      } else if (params.mode === 'notan') {
+        const thr = params.threshold;
+        for (let i = 0; i < d.length; i += 4) {
+          const L = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          const v = L >= thr ? 255 : 0;
+          d[i] = d[i + 1] = d[i + 2] = v;
+        }
+
+      } else if (params.mode === 'squint') {
+        boxBlur(d, W, H, params.blur);
+
+      } else if (params.mode === 'zones') {
+        // Reserve bottom strip for legend (proportional to canvas height)
+        const legendH = Math.max(50, Math.round(H * 0.08));
+        const imgH = H - legendH;
+
+        // Pixel loop — only process pixels above legend area
+        for (let y = 0; y < imgH; y++) {
+          for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const L = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+            const z = ZONES[LUM_TO_ZONE[L]];
+            d[i] = z.rgb[0]; d[i + 1] = z.rgb[1]; d[i + 2] = z.rgb[2];
+          }
+        }
+        // Clear legend area to black
+        for (let y = imgH; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; d[i + 3] = 255;
+          }
+        }
+        ctx.putImageData(img, 0, 0);
+
+        // Draw legend swatches + labels
+        const nz = ZONES.length;
+        const sw = Math.floor(W / nz);
+        const fontSize = Math.max(8, Math.min(13, Math.floor(legendH * 0.22)));
+        ctx.font = fontSize + 'px -apple-system,BlinkMacSystemFont,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let z = 0; z < nz; z++) {
+          const zd = ZONES[z];
+          const lx = z * sw;
+          // Swatch
+          ctx.fillStyle = 'rgb(' + zd.rgb.join(',') + ')';
+          ctx.fillRect(lx, imgH, sw, Math.round(legendH * 0.35));
+          // Zone number
+          const bright = zd.rgb[0] > 100;
+          ctx.fillStyle = bright ? '#000' : '#fff';
+          ctx.fillText(zd.num, lx + sw / 2, imgH + 2);
+          // German name (two lines)
+          ctx.fillStyle = '#ccc';
+          const mid = lx + sw / 2;
+          const y1 = imgH + Math.round(legendH * 0.38);
+          const lineH = fontSize + 2;
+          const words = zd.de.split(' ');
+          ctx.fillText(words[0], mid, y1);
+          if (words[1]) ctx.fillText(words[1], mid, y1 + lineH);
+          // English name
+          ctx.fillStyle = '#888';
+          const enWords = zd.en.split(' ');
+          const y2 = y1 + lineH * 2 + 2;
+          ctx.fillText(enWords[0], mid, y2);
+          if (enWords[1]) ctx.fillText(enWords[1], mid, y2 + lineH);
+        }
+        if (params.grid) drawGrid(ctx, W, H, params);
+        return; // already put image data
+
+      } else if (params.mode === 'temperature') {
+        const strength = params.tempStrength / 100;
+        for (let i = 0; i < d.length; i += 4) {
+          const R = d[i], G = d[i + 1], B = d[i + 2];
+          const [h, s] = rgbToHsl(R, G, B);
+          // Warm: hue 340–360 or 0–45, with some saturation
+          if (s > 0.1 && (h >= 340 || h <= 45)) {
+            // Tint toward orange (255, 140, 0)
+            d[i]     = Math.min(255, Math.round(R + (255 - R) * strength * 0.7));
+            d[i + 1] = Math.round(G + (140 - G) * strength * 0.5);
+            d[i + 2] = Math.max(0,   Math.round(B + (  0 - B) * strength * 0.7));
+          // Cool: hue 180–270
+          } else if (s > 0.1 && h >= 180 && h <= 270) {
+            // Tint toward blue (30, 100, 255)
+            d[i]     = Math.max(0,   Math.round(R + ( 30 - R) * strength * 0.7));
+            d[i + 1] = Math.round(G + (100 - G) * strength * 0.4);
+            d[i + 2] = Math.min(255, Math.round(B + (255 - B) * strength * 0.7));
+          }
+        }
+      }
+
+      ctx.putImageData(img, 0, 0);
+      if (params.grid) drawGrid(ctx, W, H, params);
+    },
+  });
+
+  // ── Grid drawing ─────────────────────────────────────────────────────────────
+  function drawGrid(ctx, W, H, params) {
+    let div = params.gridDiv === 'c' ? (Number(params.gridCustom) || 6) : Number(params.gridDiv);
+    div = Math.max(2, Math.min(20, div));
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    for (let i = 1; i < div; i++) {
+      const x = Math.round(W / div * i);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+      const y = Math.round(H / div * i);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+})();
+</script>
+</body>
+</html>

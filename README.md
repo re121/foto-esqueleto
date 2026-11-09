@@ -12,6 +12,7 @@ Built for **Kiroween 2026 — Skeleton Crew**.
 | **Landing page** | <https://effortless-brigadeiros-f6dfce.netlify.app> |
 | **Enfoque** | <https://effortless-brigadeiros-f6dfce.netlify.app/enfoque.html> |
 | **Kontaktbogen** | <https://effortless-brigadeiros-f6dfce.netlify.app/hoja-de-contactos.html> |
+| **Valores** | <https://effortless-brigadeiros-f6dfce.netlify.app/valores.html> |
 
 
 
@@ -19,8 +20,9 @@ Built for **Kiroween 2026 — Skeleton Crew**.
 |---|---|---|
 | **Enfoque** (`dist/enfoque.html`) | Focus peaking for macro photography: the sharpest edges light up in colour. | Camera or photo |
 | **Kontaktbogen** (`dist/hoja-de-contactos.html`) | Many photos → one printable contact sheet or postcard (A6, A4, square). | Many photos |
+| **Valores** (`dist/valores.html`) | Tonal analysis for painters: value scale, Notan, squint blur, Ansel Adams zone map, colour temperature, grid overlay, and an eyedropper. | Photo |
 
-Both are built from the same `skeleton/` — an app is just a config and a `render()` function.
+All three are built from the same `skeleton/` — an app is just a config and a `render()` function.
 
 ## Make your own app
 
